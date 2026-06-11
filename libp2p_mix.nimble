@@ -11,8 +11,8 @@ skipDirs = @["examples", "tests"]
 # Pin nim-libp2p master until a release is tagged.
 # CI uses `--solver:legacy` for `nimble setup` (libp2p's boringssl is git-pinned).
 requires "nim >= 2.0.0",
-  "https://github.com/vacp2p/nim-libp2p.git#d4cd68b91b82f34a0ede3766ab1ca8119d5015f8",
-  "chronicles >= 0.11.0", "chronos >= 4.2.2", "metrics", "nimcrypto >= 0.6.0",
+  "https://github.com/vacp2p/nim-libp2p.git#ff8d51857b4b79a68468e7bcc27b2026cca02996",
+  "chronicles >= 0.11.0", "chronos >= 4.0.3", "metrics", "nimcrypto >= 0.6.0",
   "stew >= 0.4.2", "results", "unittest2"
 
 import os, strutils

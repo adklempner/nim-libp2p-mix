@@ -23,7 +23,7 @@ proc generateRandomFieldElement*(): Result[FieldElement, string] =
   let rng = newRng()
   if rng.isNil:
     return err("Failed to create Rng with system randomness")
-  ok(Curve25519Key.random(rng))
+  ok(Curve25519Key.random(rng[]))
 
 # Generate a key pair (private key and public key are both FieldElements)
 proc generateKeyPair*(): Result[tuple[privateKey, publicKey: FieldElement], string] =

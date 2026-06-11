@@ -33,7 +33,7 @@ proc initMixNodeInfo*(
 proc generateRandom*(T: typedesc[MixNodeInfo], port: int, rng: Rng): MixNodeInfo =
   let
     (mixPrivKey, mixPubKey) = generateKeyPair().expect("Generate key pair error")
-    keyPair = SkKeyPair.random(rng)
+    keyPair = SkKeyPair.random(rng[])
     pubKeyProto = PublicKey(scheme: Secp256k1, skkey: keyPair.pubkey)
 
   MixNodeInfo(
