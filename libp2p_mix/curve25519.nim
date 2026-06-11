@@ -6,7 +6,9 @@ import libp2p/crypto/[crypto, curve25519]
 
 const FieldElementSize* = Curve25519KeySize
 
-type FieldElement* = Curve25519Key
+type
+  FieldElement* = Curve25519Key
+  Rng* = ref HmacDrbgContext
 
 proc bytesToFieldElement*(bytes: openArray[byte]): Result[FieldElement, string] =
   ## Convert bytes to FieldElement
