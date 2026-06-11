@@ -5,8 +5,8 @@
 
 import std/math
 import libp2p/crypto/crypto
-import ./delay
-export delay
+import ./delay, ./curve25519
+export delay, curve25519.Rng
 
 type DelayStrategy* = ref object of RootObj ## Abstract interface for delay strategies.
   rng: Rng
