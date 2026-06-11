@@ -193,7 +193,8 @@ proc verifyProof(
     mix_messages_error.inc(labelValues = [label, "SPAM_PROOF_INVALID"])
     return err("Spam protection proof verification failed")
 
-  trace "Spam protection proof verified successfully"
+  info "Spam protection proof verified successfully",
+    verifierPeerId = mixProto.mixNodeInfo.peerId, label = label
   ok()
 
 method handleMixMessages*(
