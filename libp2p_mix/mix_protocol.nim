@@ -7,7 +7,7 @@ import
   ./[
     curve25519, delay, fragmentation, mix_message, mix_node, sphinx, serialization,
     tag_manager, mix_metrics, exit_layer, multiaddr, exit_connection, spam_protection,
-    delay_strategy, pool, cover_traffic,
+    delay_strategy, pool, cover_traffic, compat,
   ]
 import libp2p/protocols/protocol
 import libp2p/utils/[sequninit]
@@ -78,7 +78,7 @@ proc registerDestReadBehavior*(
 proc cryptoRandomInt(rng: Rng, max: int): Result[int, string] =
   if max == 0:
     return err("Max cannot be zero.")
-  let res = rng.generate(uint64) mod uint64(max)
+  let res = rng[].generate(uint64) mod uint64(max)
   ok(res.int)
 
 proc removeClosedConnections(
@@ -574,7 +574,7 @@ proc buildSurbs(
 
   for _ in 0.uint8 ..< numSurbs:
     var id: SURBIdentifier
-    mixProto.rng.generate(id)
+    mixProto.rng[].generate(id)
     let surb = ?mixProto.buildSurb(id, destPeerId, exitPeerId)
     igroup.members.incl(id)
     mixProto.connCreds[id] = ConnCreds(
@@ -949,7 +949,7 @@ proc buildCoverPacket*(
   let maxMsgSize = getMaxMessageSizeForCodec(CoverTrafficCodec).valueOr:
     return err("Failed to get max message size for cover codec: " & error)
   var randomPayload = newSeq[byte](maxMsgSize)
-  mixProto.rng.generate(randomPayload)
+  mixProto.rng[].generate(randomPayload)
 
   let message = buildMessage(
     randomPayload, CoverTrafficCodec, mixProto.mixNodeInfo.peerId

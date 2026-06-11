@@ -178,7 +178,7 @@ proc createSURB*(
 
   # Generate key
   var key = newSeqUninit[byte](k)
-  rng.generate(key)
+  rng[].generate(key)
 
   return ok(
     SURB(

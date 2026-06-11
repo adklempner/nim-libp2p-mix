@@ -31,7 +31,7 @@ proc new*(T: typedesc[NoSamplingDelayStrategy], rng: Rng): T =
   T(rng: rng)
 
 method generateForEntry*(self: NoSamplingDelayStrategy): Delay {.gcsafe, raises: [].} =
-  self.rng.generate(uint16) mod 3
+  self.rng[].generate(uint16) mod 3
 
 method generateForIntermediate*(
     self: NoSamplingDelayStrategy, encodedDelay: Delay
@@ -103,7 +103,7 @@ proc new*(
 
 proc sampleOpenUnitInterval(self: DelayStrategy): float64 {.inline, raises: [].} =
   const Float64MantissaBits = 53
-  let rand53 = self.rng.generate(uint64) shr (64 - Float64MantissaBits)
+  let rand53 = self.rng[].generate(uint64) shr (64 - Float64MantissaBits)
   (float64(rand53) + 0.5) / float64(1'u64 shl Float64MantissaBits)
 
 proc practicalMaxDelay(meanDelay: Delay, negligibleProb: float64): float64 {.inline.} =
