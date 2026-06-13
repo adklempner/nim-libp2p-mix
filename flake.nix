@@ -29,6 +29,10 @@
             inherit pkgs;
             src = ./.;
           };
+          cbind = import ./nix/cbind.nix {
+            inherit pkgs;
+            src = ./.;
+          };
         }
       );
 
