@@ -4,7 +4,7 @@
 import std/tables
 import chronos, results
 import ../../../[alloc, ffi_types, types]
-import ../../../mix_spam_protection_factory
+import pkg/libp2p_mix/spam_protection_factory
 import pkg/libp2p
 import pkg/libp2p/crypto/curve25519
 import pkg/libp2p/crypto/secp

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 # Copyright (c) Status Research & Development GmbH
 
-## Generic, RLN-agnostic spam-protection injection hook for the mix cbind.
+## Generic, RLN-agnostic spam-protection injection hook for the mix protocol.
 ##
 ## A plugin (e.g. mix-rln-spam-protection-plugin) registers a factory BEFORE
 ## `libp2p_new` is called; the factory runs on the libp2p thread at mix mount
@@ -16,7 +16,7 @@
 ## thread-safe storage.
 
 import results
-import pkg/libp2p_mix/spam_protection
+import ./spam_protection
 
 type MixSpamProtectionFactory* = proc(): Opt[SpamProtection] {.
   gcsafe, nimcall, raises: []
