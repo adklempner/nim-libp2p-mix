@@ -35,7 +35,7 @@ proc buildCBindings(libType: string, params = "") =
 
   exec "nim c --out:" & buildDir & "/libp2p." & ext & " --threads:on --app:" & app &
     " --opt:size --noMain --mm:refc --header --undef:metrics" &
-    " --nimMainPrefix:libp2p --nimcache:nimcache libp2p.nim"
+    " --nimMainPrefix:libp2p --nimcache:nimcache cbind.nim"
 
 task libDynamic, "Generate dynamic bindings":
   buildCBindings "dynamic", ""

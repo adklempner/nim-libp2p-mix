@@ -1,5 +1,5 @@
 # Mirrors nim-libp2p's nix/cbind.nix (at c431993), adapted for the
-# out-of-tree mix cbind: compiles cbind/libp2p.nim against the libp2p_mix
+# out-of-tree mix cbind: compiles cbind/cbind.nim (the cbind main module) against the libp2p_mix
 # package (src root) plus the pinned nim-libp2p from deps.nix.
 { pkgs, src }:
 
@@ -53,13 +53,13 @@ pkgs.stdenv.mkDerivation {
     nim c $common_args \
       --out:build/libp2p.${libExt} \
       --app:lib \
-      cbind/libp2p.nim
+      cbind/cbind.nim
 
     echo "== Building C bindings (static) =="
     nim c $common_args \
       --out:build/libp2p.a \
       --app:staticlib \
-      cbind/libp2p.nim
+      cbind/cbind.nim
   '';
 
   installPhase = ''
