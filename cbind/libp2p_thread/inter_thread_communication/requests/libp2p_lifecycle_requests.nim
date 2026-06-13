@@ -257,6 +257,15 @@ proc createLibp2p(appCallbacks: AppCallbacks, config: Libp2pConfig): LibP2P =
   let transport = TransportType.fromCint(config.transport).valueOr:
     raiseAssert "invalid transport type"
 
+  if addrs.len == 0:
+    let defaultAddr =
+      case transport
+      of TransportType.QUIC: "/ip4/0.0.0.0/udp/0/quic-v1"
+      of TransportType.TCP: "/ip4/127.0.0.1/tcp/0"
+    let parsedDefault = MultiAddress.init(defaultAddr).valueOr:
+      raiseAssert "invalid default listen address: " & $error
+    addrs.add(parsedDefault)
+
   var switchBuilder = SwitchBuilder
     .new()
     .withRng(rng)
@@ -264,8 +273,7 @@ proc createLibp2p(appCallbacks: AppCallbacks, config: Libp2pConfig): LibP2P =
     .withNameResolver(cast[NameResolver](DnsResolver.new(dnsServersAddrs)))
     .withNoise()
 
-  if addrs.len > 0:
-    switchBuilder = switchBuilder.withAddresses(addrs)
+  switchBuilder = switchBuilder.withAddresses(addrs)
 
   privKey.withValue(pkey):
     switchBuilder = switchBuilder.withPrivateKey(pkey)
