@@ -15,6 +15,7 @@ import
     libp2p_lifecycle_requests, libp2p_peer_manager_requests, libp2p_pubsub_requests,
     libp2p_kademlia_requests, libp2p_service_discovery_requests, libp2p_stream_requests,
     libp2p_relay_requests, libp2p_protocol_requests, libp2p_peerstore_requests,
+    libp2p_custom_requests,
   ],
   pkg/libp2p
 
@@ -28,6 +29,7 @@ type RequestType* {.pure.} = enum
   RELAY
   PROTOCOL
   PEERSTORE
+  CUSTOM
 
 type CallbackKind* {.pure.} = enum
   DEFAULT
@@ -94,6 +96,8 @@ proc destroyUnprocessedRequest*(request: ptr LibP2PThreadRequest) =
       destroyShared(cast[ptr ProtocolRequest](request[].reqContent))
     of RequestType.PEERSTORE:
       destroyShared(cast[ptr PeerStoreRequest](request[].reqContent))
+    of RequestType.CUSTOM:
+      destroyShared(cast[ptr CustomRequest](request[].reqContent))
 
   deallocShared(request)
 
@@ -481,6 +485,9 @@ proc process*(
     await processProtocol(request, libp2p)
   of RequestType.PEERSTORE:
     await processPeerStore(request, libp2p)
+  of RequestType.CUSTOM:
+    await cast[ptr CustomRequest](request[].reqContent).process(libp2p)
+    deallocShared(request)
 
 # String representation of the request type
 proc `$`*(self: LibP2PThreadRequest): string =
