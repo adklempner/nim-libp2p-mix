@@ -3,7 +3,7 @@
 
 import std/sequtils
 import chronos, results
-import ../../../alloc
+import ../../../[alloc, ffi_types, types]
 import pkg/libp2p
 import pkg/libp2p/extended_peer_record
 import pkg/libp2p/protocols/kademlia
@@ -18,11 +18,20 @@ type ServiceDiscoveryMsgType* = enum
   SD_REGISTER_INTEREST
   SD_UNREGISTER_INTEREST
   SD_LOOKUP
+  SD_CREATE_XPR
+
+type SharedService = object
+  id: cstring
+  data: SharedSeq[byte]
 
 type ServiceDiscoveryRequest* = object
   operation: ServiceDiscoveryMsgType
   serviceId: cstring
   serviceData: SharedSeq[byte]
+  addrs: SharedSeq[cstring]
+  services: ptr UncheckedArray[SharedService]
+  servicesLen: int
+  seqNo: uint64
 
 proc createShared*(
     T: type ServiceDiscoveryRequest,
@@ -37,9 +46,44 @@ proc createShared*(
   ret[].serviceData = allocSharedSeqFromCArray(serviceData, serviceDataLen.int)
   return ret
 
+proc createSharedXpr*(
+    T: type ServiceDiscoveryRequest,
+    addrs: ptr cstring,
+    addrsLen: csize_t,
+    services: ptr Libp2pServiceInfo,
+    servicesLen: csize_t,
+    seqNo: uint64,
+): ptr type T =
+  var ret = createShared(T)
+  ret[].operation = SD_CREATE_XPR
+  ret[].addrs = allocSharedSeqFromCArray(addrs, addrsLen.int)
+  ret[].seqNo = seqNo
+
+  if servicesLen > 0 and not services.isNil():
+    ret[].servicesLen = servicesLen.int
+    ret[].services = cast[ptr UncheckedArray[SharedService]](allocShared0(
+      sizeof(SharedService) * servicesLen.int
+    ))
+    let src = cast[ptr UncheckedArray[Libp2pServiceInfo]](services)
+    for i in 0 ..< servicesLen.int:
+      ret[].services[i].id = src[i].id.alloc()
+      ret[].services[i].data = allocSharedSeqFromCArray(src[i].data, src[i].dataLen.int)
+
+  return ret
+
 proc destroyShared*(self: ptr ServiceDiscoveryRequest) =
-  deallocShared(self[].serviceId)
+  if not self[].serviceId.isNil():
+    deallocShared(self[].serviceId)
   deallocSharedSeq(self[].serviceData)
+  deallocSharedSeq(self[].addrs)
+
+  if not self[].services.isNil():
+    for i in 0 ..< self[].servicesLen:
+      if not self[].services[i].id.isNil():
+        deallocShared(self[].services[i].id)
+      deallocSharedSeq(self[].services[i].data)
+    deallocShared(self[].services)
+
   deallocShared(self)
 
 proc process*(
@@ -72,6 +116,8 @@ proc process*(
     disco.unregisterInterest($self[].serviceId)
   of SD_LOOKUP:
     raiseAssert "unsupported path, use processLookup"
+  of SD_CREATE_XPR:
+    raiseAssert "unsupported path, use processCreateXpr"
 
   ok()
 
@@ -94,3 +140,64 @@ proc processLookup*(
     return err($error)
 
   buildRandomRecordsResult(ads.mapIt(it.data))
+
+proc toServices(self: ptr ServiceDiscoveryRequest): seq[ServiceInfo] =
+  var services: seq[ServiceInfo]
+  for i in 0 ..< self[].servicesLen:
+    services.add(
+      ServiceInfo(id: $self[].services[i].id, data: self[].services[i].data.toSeq())
+    )
+  services
+
+proc toAddresses(self: ptr ServiceDiscoveryRequest): Result[seq[MultiAddress], string] =
+  var addresses: seq[MultiAddress]
+  for address in self[].addrs.toSeq():
+    let ma = MultiAddress.init($address).valueOr:
+      return err("invalid multiaddress '" & $address & "': " & $error)
+    addresses.add(ma)
+  ok(addresses)
+
+proc processCreateXpr*(
+    self: ptr ServiceDiscoveryRequest, libp2p: ptr LibP2P
+): Future[Result[ptr ReadResponse, string]] {.async: (raises: [CancelledError]).} =
+  defer:
+    destroyShared(self)
+
+  let peerInfo = libp2p[].switch.peerInfo
+  if peerInfo.isNil():
+    return err("switch peerInfo is nil")
+
+  var addresses = self.toAddresses().valueOr:
+    return err(error)
+  if addresses.len == 0:
+    addresses = peerInfo.addrs
+
+  let seqNo =
+    if self[].seqNo == 0:
+      Moment.now().epochSeconds.uint64
+    else:
+      self[].seqNo
+
+  let peerRecord = ExtendedPeerRecord.init(
+    peerId = peerInfo.peerId,
+    addresses = addresses,
+    seqNo = seqNo,
+    services = self.toServices(),
+  )
+
+  let xpr = SignedExtendedPeerRecord.init(peerInfo.privateKey, peerRecord).valueOr:
+    return err($error)
+
+  let encoded = xpr.encode().valueOr:
+    return err($error)
+
+  ok(allocReadResponse(encoded))
+
+proc decodeXpr*(encoded: seq[byte]): Result[ptr Libp2pExtendedPeerRecord, string] =
+  let sxpr = SignedExtendedPeerRecord.decode(encoded).valueOr:
+    return err("failed to decode signed extended peer record: " & $error)
+
+  sxpr.checkValid().isOkOr:
+    return err("invalid XPR signature: " & $error)
+
+  buildExtendedPeerRecord(sxpr.data)

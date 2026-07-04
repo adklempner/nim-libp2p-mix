@@ -233,6 +233,34 @@ proc buildRandomRecordsResult*(
 
   ok(resPtr)
 
+proc deallocExtendedPeerRecord*(record: ptr Libp2pExtendedPeerRecord) =
+  if record.isNil():
+    return
+  deallocLibp2pExtendedPeerRecord(record[])
+  deallocShared(record)
+
+proc buildExtendedPeerRecord*(
+    record: ExtendedPeerRecord
+): Result[ptr Libp2pExtendedPeerRecord, string] =
+  let resPtr =
+    cast[ptr Libp2pExtendedPeerRecord](createShared(Libp2pExtendedPeerRecord, 1))
+  try:
+    resPtr[].peerId = ($record.peerId).alloc()
+    resPtr[].seqNo = record.seqNo
+
+    let addrs = record.addresses.mapIt($it.address)
+    resPtr[].addrsLen = addrs.len.csize_t
+    resPtr[].addrs = allocCStringArrayFromSeq(addrs)
+
+    let services = record.services
+    resPtr[].servicesLen = services.len.csize_t
+    resPtr[].services = allocServiceInfoArrayFromSeq(services)
+  except LPError as exc:
+    deallocExtendedPeerRecord(resPtr)
+    return err(exc.msg)
+
+  ok(resPtr)
+
 proc process*(
     self: ptr KademliaRequest, kadOpt: Opt[KadDHT]
 ): Future[Result[void, string]] {.async: (raises: [CancelledError]).} =

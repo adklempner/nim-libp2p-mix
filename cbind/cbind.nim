@@ -8,7 +8,8 @@
 when defined(linux):
   {.passl: "-Wl,-soname,libp2p.so".}
 
-import std/[typetraits, tables, atomics], chronos, chronicles
+import std/[typetraits, tables, atomics, json, locks, times], chronos, chronicles
+import metrics
 import
   ./libp2p_thread/libp2p_thread,
   ./[ffi_types, types],
@@ -63,6 +64,17 @@ template failWithBufferMsg(
   if msgLen > 0:
     msgPtr = cast[ptr cchar](addr localMsg[0])
   callback(RET_ERR.cint, nil, 0, msgPtr, msgLen, userData)
+  return RET_ERR.cint
+
+template failWithRecordMsg(
+    callback: ExtendedPeerRecordCallback, userData: pointer, msg: string
+) =
+  let localMsg = msg
+  let msgLen = cast[csize_t](len(localMsg))
+  var msgPtr: ptr cchar = nil
+  if msgLen > 0:
+    msgPtr = cast[ptr cchar](addr localMsg[0])
+  callback(RET_ERR.cint, nil, msgPtr, msgLen, userData)
   return RET_ERR.cint
 
 template failIfStreamNil(
@@ -1620,6 +1632,131 @@ proc libp2p_peerstore_delete_peer(
     callback,
     userData,
   ).cint
+
+proc libp2p_create_xpr(
+    ctx: ptr LibP2PContext,
+    addrs: ptr cstring,
+    addrsLen: csize_t,
+    services: ptr Libp2pServiceInfo,
+    servicesLen: csize_t,
+    seqNo: uint64,
+    callback: Libp2pBufferCallback,
+    userData: pointer,
+): cint {.dynlib, exportc, cdecl.} =
+  initializeLibrary()
+  checkLibParams(ctx, callback, userData)
+
+  if addrsLen > 0 and addrs.isNil():
+    failWithBufferMsg(callback, userData, "addrs are not set")
+
+  if servicesLen > 0 and services.isNil():
+    failWithBufferMsg(callback, userData, "services are not set")
+
+  let serviceArray = cast[ptr UncheckedArray[Libp2pServiceInfo]](services)
+  for i in 0 ..< servicesLen.int:
+    if serviceArray[i].dataLen > 0 and serviceArray[i].data.isNil():
+      failWithBufferMsg(callback, userData, "service data is not set")
+
+  libp2p_thread.sendRequestToLibP2PThread(
+    ctx,
+    RequestType.SERVICE_DISCOVERY,
+    ServiceDiscoveryRequest.createSharedXpr(
+      addrs = addrs,
+      addrsLen = addrsLen,
+      services = services,
+      servicesLen = servicesLen,
+      seqNo = seqNo,
+    ),
+    callback,
+    CallbackKind.READ,
+    userData,
+  ).isOkOr:
+    failWithBufferMsg(callback, userData, "libp2p error: " & $error)
+
+  RET_OK.cint
+
+proc libp2p_decode_xpr(
+    encoded: ptr byte,
+    encodedLen: csize_t,
+    callback: ExtendedPeerRecordCallback,
+    userData: pointer,
+): cint {.dynlib, exportc, cdecl.} =
+  ## Decodes a signed, protobuf-encoded XPR, verifies its signature, and returns
+  ## the decoded record. This is a pure operation that needs no running node.
+  initializeLibrary()
+
+  if callback.isNil():
+    return RET_MISSING_CALLBACK.cint
+
+  if encoded.isNil() or encodedLen == 0:
+    failWithRecordMsg(callback, userData, "encoded XPR is not set")
+
+  var bytes = newSeq[byte](encodedLen.int)
+  copyMem(addr bytes[0], encoded, encodedLen.int)
+
+  let record = decodeXpr(bytes).valueOr:
+    failWithRecordMsg(callback, userData, error)
+
+  foreignThreadGc:
+    callback(RET_OK.cint, record, nil, 0, userData)
+
+  deallocExtendedPeerRecord(record)
+  RET_OK.cint
+
+proc libp2p_collect_metrics(
+    ctx: ptr LibP2PContext, callback: Libp2pCallback, userData: pointer
+): cint {.dynlib, exportc, cdecl.} =
+  ## Synchronously walks the metrics registry, serializes it to a JSON array of
+  ## {name,type,help,labels,value,timestamp} objects, and hands the bytes to
+  ## `callback(RET_OK, buf, len, userData)`. The buffer is not null-terminated
+  ## and only lives for the duration of this call. Builds without -d:metrics
+  ## always deliver an empty array.
+  initializeLibrary()
+  checkLibParams(ctx, callback, userData)
+
+  var jsonText = "[]"
+  when defined(metrics):
+    var entries = newJArray()
+    var collectors: seq[Collector]
+    withLock metrics.defaultRegistry.lock:
+      for collector in metrics.defaultRegistry.collectors:
+        collectors.add(collector)
+    for collector in collectors:
+      let typ = collector.typ
+      let help = collector.help
+      let handler: MetricHandler = proc(
+          name: string,
+          value: float64,
+          labels: openArray[string] = [],
+          labelValues: openArray[string] = [],
+          timestamp: times.Time,
+      ) {.gcsafe, raises: [].} =
+        try:
+          var labelArr = newJArray()
+          for i in 0 ..< min(labels.len, labelValues.len):
+            labelArr.add(%*{"name": labels[i], "value": labelValues[i]})
+          let tsMs =
+            timestamp.toUnix() * 1000 + times.nanosecond(timestamp) div 1_000_000
+          entries.add(
+            %*{
+              "name": name,
+              "type": typ,
+              "help": help,
+              "labels": labelArr,
+              "value": value,
+              "timestamp": tsMs,
+            }
+          )
+        except CatchableError:
+          discard
+      collector.collect(handler)
+    jsonText = $entries
+
+  var msgPtr: ptr cchar = nil
+  if jsonText.len > 0:
+    msgPtr = cast[ptr cchar](addr jsonText[0])
+  callback(RET_OK.cint, msgPtr, cast[csize_t](jsonText.len), userData)
+  RET_OK.cint
 
 ### End of exported procs
 ################################################################################

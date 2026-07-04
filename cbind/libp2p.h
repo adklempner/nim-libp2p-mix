@@ -262,6 +262,12 @@ typedef void (*RandomRecordsCallback)(int callerRet,
                                       size_t recordsLen, const char *msg,
                                       size_t len, void *userData);
 
+// record is only valid during the callback; copy if needed.
+typedef void (*ExtendedPeerRecordCallback)(int callerRet,
+                                           const Libp2pExtendedPeerRecord *record,
+                                           const char *msg, size_t len,
+                                           void *userData);
+
 // peerIds is only valid during the callback; copy if needed.
 typedef void (*PeersCallback)(int callerRet, const char **peerIds,
                               size_t peerIdsLen, const char *msg, size_t len,
@@ -493,6 +499,22 @@ int libp2p_service_disco_start_advertising(
     libp2p_ctx_t *ctx, const char *serviceId, const uint8_t *serviceData,
     size_t serviceDataLen, Libp2pCallback callback, void *userData);
 
+// Builds and signs an Extended Peer Record (XPR) for the node's own peer with
+// its private key. peerId comes from the node; empty addrs uses the node's
+// listen addresses; seqNo 0 defaults to the current unix time. callback
+// receives the signed, protobuf-encoded XPR bytes, valid only during the call.
+int libp2p_create_xpr(libp2p_ctx_t *ctx, const char **addrs, size_t addrsLen,
+                      const Libp2pServiceInfo *services, size_t servicesLen,
+                      uint64_t seqNo, Libp2pBufferCallback callback,
+                      void *userData);
+
+// Decodes a signed, protobuf-encoded XPR (as produced by libp2p_create_xpr),
+// verifies its signature, and passes the decoded record to the callback. This
+// is a pure operation and needs no running node, so it takes no context. The
+// record is only valid for the duration of the callback; copy if needed.
+int libp2p_decode_xpr(const uint8_t *encoded, size_t encodedLen,
+                      ExtendedPeerRecordCallback callback, void *userData);
+
 int libp2p_service_disco_stop_advertising(libp2p_ctx_t *ctx,
                                           const char *serviceId,
                                           Libp2pCallback callback,
@@ -607,6 +629,14 @@ int libp2p_peerstore_set_peer_protocols(libp2p_ctx_t *ctx, const char *peerId,
 // Removes peerId from all peerstore books.
 int libp2p_peerstore_delete_peer(libp2p_ctx_t *ctx, const char *peerId,
                                  Libp2pCallback callback, void *userData);
+
+// Delivers the metrics registry as a JSON array of
+// {name,type,help,labels,value,timestamp} objects via callback's (msg, len).
+// The buffer lives only for the synchronous duration of this call and is
+// not null-terminated; consume or copy it before the callback returns.
+// Builds without -d:metrics always deliver an empty array.
+int libp2p_collect_metrics(libp2p_ctx_t *ctx, Libp2pCallback callback,
+                           void *userData);
 
 #ifdef __cplusplus
 }
