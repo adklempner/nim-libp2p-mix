@@ -4,8 +4,9 @@
 import
   ./libp2p_mix/[
     mix_protocol, mix_node, entry_connection, exit_layer, spam_protection,
-    delay_strategy, pool,
+    spam_protection_factory, delay_strategy, pool,
   ]
+export spam_protection_factory
 import libp2p/stream/connection
 import chronos
 import libp2p/utils/sequninit
