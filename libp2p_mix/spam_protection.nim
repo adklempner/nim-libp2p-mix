@@ -6,6 +6,7 @@
 ##
 ## Uses per-hop proof generation where each node generates fresh proofs for the next hop.
 
+import chronos
 import results
 
 type
@@ -68,7 +69,7 @@ method isProofTokenValid*(
 
 method verifyProof*(
     self: SpamProtection, encodedProofData: seq[byte], bindingData: seq[byte]
-): Result[bool, string] {.base, gcsafe, raises: [].} =
+): Future[Result[bool, string]] {.base, async: (raises: [CancelledError]).} =
   ## Validate that a proof is correct and properly bound to packet data.
   ##
   ## Parameters:
@@ -83,6 +84,10 @@ method verifyProof*(
   ##   - Must handle malformed inputs gracefully, returning false
   ##   - Must atomically update internal state on successful verification
   ##   - Must manage state cleanup independently
+  ##
+  ## Async so implementations may recover a stale validity window in-line
+  ## (e.g. an on-demand Merkle-root refresh) instead of dropping the packet;
+  ## they must still resolve promptly (bounded internal timeouts).
   ##
   ## Note: This base implementation should be overridden by concrete types.
   raiseAssert "verifyProof must be implemented by concrete spam protection types"

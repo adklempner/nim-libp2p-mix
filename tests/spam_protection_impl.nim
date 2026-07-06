@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 # Copyright (c) Status Research & Development GmbH
 
+import chronos
 import results
 import libp2p_mix/spam_protection
 
@@ -69,7 +70,7 @@ method generateProof*(
 
 method verifyProof*(
     self: PoWSpamProtection, encodedProofData: seq[byte], bindingData: seq[byte]
-): Result[bool, string] =
+): Future[Result[bool, string]] {.async: (raises: [CancelledError]).} =
   self.verificationCount += 1
 
   let proofBytes = encodedProofData
@@ -125,7 +126,7 @@ method generateProof*(
 
 method verifyProof*(
     self: RateLimitSpamProtection, encodedProofData: seq[byte], bindingData: seq[byte]
-): Result[bool, string] =
+): Future[Result[bool, string]] {.async: (raises: [CancelledError]).} =
   let proofBytes = encodedProofData
   if proofBytes.len != 4:
     return ok(false)

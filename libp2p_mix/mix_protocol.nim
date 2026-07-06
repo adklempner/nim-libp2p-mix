@@ -181,14 +181,14 @@ proc extractProof(
 
 proc verifyProof(
     mixProto: MixProtocol, sphinxPacket: seq[byte], proof: seq[byte], label: string
-): Result[void, string] =
+): Future[Result[void, string]] {.async: (raises: [CancelledError]).} =
   ## Verify a previously extracted spam protection proof.
   let spamProtection = mixProto.spamProtection.valueOr:
     return ok()
 
   let bindingData = sphinxPacket
 
-  let verifyResult = spamProtection.verifyProof(proof, bindingData).valueOr:
+  let verifyResult = (await spamProtection.verifyProof(proof, bindingData)).valueOr:
     mix_messages_error.inc(labelValues = [label, "SPAM_PROOF_VERIFY_ERROR"])
     return err(fmt"Spam protection proof verification error: {error}")
 
@@ -243,7 +243,7 @@ method handleMixMessages*(
 
   # Step 3: Verify spam proof
   # Only done after replay check passes to avoid wasting cycles on duplicates
-  mixProto.verifyProof(sphinxBytes, spamProof, "Intermediate/Exit").isOkOr:
+  (await mixProto.verifyProof(sphinxBytes, spamProof, "Intermediate/Exit")).isOkOr:
     error "Spam protection verification failed", err = error
     return
 
