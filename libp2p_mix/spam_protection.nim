@@ -6,7 +6,7 @@
 ##
 ## Uses per-hop proof generation where each node generates fresh proofs for the next hop.
 
-import results
+import chronos, results
 
 type
   EpochChangeCallback* = proc(epoch: uint64) {.gcsafe, raises: [].}
@@ -29,8 +29,14 @@ type
 
 method generateProof*(
     self: SpamProtection, bindingData: seq[byte]
-): Result[ProofResult, string] {.base, gcsafe, raises: [].} =
+): Future[Result[ProofResult, string]] {.
+    base, async: (raises: [CancelledError])
+.} =
   ## Generate a spam protection proof bound to specific packet data.
+  ##
+  ## Async: implementations may fetch the proof from an external prover (the
+  ## cbind's host-module bridge does); a synchronous wait here would starve
+  ## the very event loop that must deliver the prover's reply.
   ##
   ## Parameters:
   ##   bindingData: For sender-generated proofs, this is the decrypted payload
@@ -68,8 +74,13 @@ method isProofTokenValid*(
 
 method verifyProof*(
     self: SpamProtection, encodedProofData: seq[byte], bindingData: seq[byte]
-): Result[bool, string] {.base, gcsafe, raises: [].} =
+): Future[Result[bool, string]] {.
+    base, async: (raises: [CancelledError])
+.} =
   ## Validate that a proof is correct and properly bound to packet data.
+  ##
+  ## Async: a window miss may trigger an on-demand refresh from an external
+  ## source (the cbind fetches fresh valid roots from its host module).
   ##
   ## Parameters:
   ##   encodedProofData: Extracted from routing block (sender approach)

@@ -30,8 +30,9 @@ type
     firstHopAddr*: MultiAddress
     proofToken*: seq[byte]
 
-  BuildCoverPacketProc* =
-    proc(): Result[CoverPacketBuild, string] {.gcsafe, raises: [].}
+  BuildCoverPacketProc* = proc(): Future[Result[CoverPacketBuild, string]] {.
+    async: (raises: [CancelledError])
+  .}
 
   SendCoverPacketProc* = proc(
     peerId: PeerId, multiAddr: MultiAddress, packet: seq[byte]
@@ -244,7 +245,7 @@ proc buildAndSendOnDemand(
     ct: ConstantRateCoverTraffic
 ) {.async: (raises: [CancelledError]).} =
   ## Build and send a cover packet on-demand. Assumes slot is already claimed.
-  let buildRes = ct.buildPacket()
+  let buildRes = await ct.buildPacket()
   if buildRes.isErr:
     trace "Failed to build cover packet", err = buildRes.error
     mix_cover_error.inc(labelValues = ["BUILD_FAILED"])
@@ -334,7 +335,7 @@ proc runPrecomputeLoop(
         min(built + ct.precomputeBatchSize, targetCount - ct.slotPool.queuedCount)
       var batchFailed = false
       while built < batchEnd:
-        let buildRes = ct.buildPacket()
+        let buildRes = await ct.buildPacket()
         if buildRes.isErr:
           debug "Pre-computation: failed to build cover packet", err = buildRes.error
           mix_cover_error.inc(labelValues = ["BUILD_FAILED"])

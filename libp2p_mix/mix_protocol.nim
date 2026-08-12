@@ -132,16 +132,18 @@ proc writeLp(
 
 proc generateAndAppendProof(
     mixProto: MixProtocol, packet: seq[byte], label: string
-): Result[tuple[packet: seq[byte], proofToken: seq[byte]], string] =
+): Future[Result[tuple[packet: seq[byte], proofToken: seq[byte]], string]] {.
+    async: (raises: [CancelledError])
+.} =
   ## Generate spam protection proof and append it to the packet.
   ## Returns the packet with proof appended and an opaque proof token
-  ## for proof slot tracking.
+  ## for proof slot tracking. Async: proof generation may fetch from an
+  ## external prover.
   let spamProtection = mixProto.spamProtection.valueOr:
     return ok((packet, newSeq[byte]()))
 
   let bindingData = packet
-  let proofResult = spamProtection
-    .generateProof(bindingData)
+  let proofResult = (await spamProtection.generateProof(bindingData))
     .mapErr(
       proc(e: string): string =
         mix_messages_error.inc(labelValues = [label, "SPAM_PROOF_GEN_FAILED"])
@@ -180,14 +182,15 @@ proc extractProof(
 
 proc verifyProof(
     mixProto: MixProtocol, sphinxPacket: seq[byte], proof: seq[byte], label: string
-): Result[void, string] =
-  ## Verify a previously extracted spam protection proof.
+): Future[Result[void, string]] {.async: (raises: [CancelledError]).} =
+  ## Verify a previously extracted spam protection proof. Async: a
+  ## valid-roots window miss may fetch a fresh window from the host.
   let spamProtection = mixProto.spamProtection.valueOr:
     return ok()
 
   let bindingData = sphinxPacket
 
-  let verifyResult = spamProtection.verifyProof(proof, bindingData).valueOr:
+  let verifyResult = (await spamProtection.verifyProof(proof, bindingData)).valueOr:
     mix_messages_error.inc(labelValues = [label, "SPAM_PROOF_VERIFY_ERROR"])
     return err(fmt"Spam protection proof verification error: {error}")
 
@@ -242,7 +245,7 @@ method handleMixMessages*(
 
   # Step 3: Verify spam proof
   # Only done after replay check passes to avoid wasting cycles on duplicates
-  mixProto.verifyProof(sphinxBytes, spamProof, "Intermediate/Exit").isOkOr:
+  (await mixProto.verifyProof(sphinxBytes, spamProof, "Intermediate/Exit")).isOkOr:
     error "Spam protection verification failed", err = error
     return
 
@@ -408,7 +411,7 @@ method handleMixMessages*(
       proc(): Future[Result[tuple[packet: seq[byte], proofToken: seq[byte]], string]] {.
           async
       .} =
-        return mixProto.generateAndAppendProof(
+        return await mixProto.generateAndAppendProof(
           processedSP.serializedSphinxPacket, "Intermediate"
         )
     )()
@@ -621,8 +624,8 @@ proc sendPacket(
   let label = $logConfig.logType
 
   # Per-hop spam protection: Generate initial proof and append to packet
-  let (packetToSend, _) = mixProto.generateAndAppendProof(
-    sphinxPacket.serialize(), label
+  let (packetToSend, _) = (
+    await mixProto.generateAndAppendProof(sphinxPacket.serialize(), label)
   ).valueOr:
     return err(error)
 
@@ -917,7 +920,7 @@ proc selectRandomNodes(
 
 proc buildCoverPacket*(
     mixProto: MixProtocol
-): Result[CoverPacketBuild, string] {.raises: [].} =
+): Future[Result[CoverPacketBuild, string]] {.async: (raises: [CancelledError]).} =
   ## Build a cover Sphinx packet with a loop path (self = exit node),
   ## random payload .
   let nodes = mixProto.selectRandomNodes(
@@ -959,8 +962,8 @@ proc buildCoverPacket*(
   let sphinxPacket = wrapInSphinxPacket(message, publicKeys, delays, hops, Hop()).valueOr:
     return err("Failed to wrap cover sphinx packet: " & error)
 
-  let (packetToSend, proofToken) = mixProto.generateAndAppendProof(
-    sphinxPacket.serialize(), "Cover"
+  let (packetToSend, proofToken) = (
+    await mixProto.generateAndAppendProof(sphinxPacket.serialize(), "Cover")
   ).valueOr:
     return err("Failed to generate proof for cover packet: " & error)
 
@@ -1043,8 +1046,10 @@ proc init*(
   mixProto.coverTraffic = coverTraffic
   coverTraffic.withValue(ct):
     ct.setCoverPacketBuilder(
-      proc(): Result[CoverPacketBuild, string] {.gcsafe, raises: [].} =
-        mixProto.buildCoverPacket()
+      proc(): Future[Result[CoverPacketBuild, string]] {.
+          async: (raises: [CancelledError])
+      .} =
+        await mixProto.buildCoverPacket()
     )
     ct.setCoverPacketSender(
       proc(
